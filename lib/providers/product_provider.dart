@@ -8,14 +8,21 @@ class ProductProvider with ChangeNotifier {
   List<Product> products = [];
   bool isInitialized = false;
 
+  static const int freeLimit = 20;
+
+  bool canAddProduct(bool isPro) {
+    if (isPro) return true;
+    return products.length < freeLimit;
+  }
+
+  int get remainingFreeSlots => freeLimit - products.length;
+
   void init() {
     if (isInitialized) return;
-
     _service.getProducts().listen((data) {
       products = data;
       notifyListeners();
     });
-
     isInitialized = true;
   }
 

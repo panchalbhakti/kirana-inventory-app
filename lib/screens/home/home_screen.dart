@@ -4,17 +4,12 @@ import '../inventory/product_list_screen.dart';
 import '../billing/billing_screen.dart';
 import '../sales/sales_history_screen.dart';
 import '../udhaar/udhaar_screen.dart';
+import '../subscription/subscription_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final FirebaseService _service = FirebaseService();
 
   final List<Map<String, dynamic>> _menuItems = [
-    {
-      'title': 'Udhaar',
-      'subtitle': 'Track customer credits',
-      'icon': Icons.account_balance_wallet_rounded,
-      'color': Color(0xFFE67E22),
-    },
     {
       'title': 'Inventory',
       'subtitle': 'Manage products & stock',
@@ -32,6 +27,12 @@ class HomeScreen extends StatelessWidget {
       'subtitle': 'View sales history',
       'icon': Icons.bar_chart_rounded,
       'color': Color(0xFFE67E22),
+    },
+    {
+      'title': 'Udhaar',
+      'subtitle': 'Track customer credits',
+      'icon': Icons.account_balance_wallet_rounded,
+      'color': Color(0xFF9B59B6),
     },
   ];
 
@@ -71,14 +72,20 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Kirana Store',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
-                        ),
+                      StreamBuilder<String>(
+                        stream: _service.getStoreName(),
+                        builder: (context, snapshot) {
+                          final name = snapshot.data ?? 'Kirana Store';
+                          return Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -217,9 +224,6 @@ class HomeScreen extends StatelessWidget {
       onTap: () {
         Widget screen;
         switch (item['title']) {
-          case 'Udhaar':
-            screen = UdhaarScreen();
-            break;
           case 'Inventory':
             screen = ProductListScreen();
             break;
@@ -228,6 +232,9 @@ class HomeScreen extends StatelessWidget {
             break;
           case 'Sales':
             screen = SalesHistoryScreen();
+            break;
+          case 'Udhaar':
+            screen = UdhaarScreen();
             break;
           default:
             return;
@@ -323,7 +330,6 @@ class HomeScreen extends StatelessWidget {
 
             const SizedBox(height: 20),
 
-            // Store info
             Row(
               children: [
                 Container(
@@ -353,10 +359,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                     Text(
                       'Inventory & Billing App',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey,
-                      ),
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -390,6 +393,27 @@ class HomeScreen extends StatelessWidget {
                 _showAbout(context);
               },
             ),
+
+            const SizedBox(height: 4),
+
+            _menuItem(
+              icon: Icons.workspace_premium_rounded,
+              label: 'Subscription',
+              color: const Color(0xFFE67E22),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    transitionDuration: const Duration(milliseconds: 400),
+                    pageBuilder: (_, __, ___) => SubscriptionScreen(),
+                    transitionsBuilder: (_, animation, __, child) =>
+                        FadeTransition(opacity: animation, child: child),
+                  ),
+                );
+              },
+            ),
+
           ],
         ),
       ),
@@ -440,14 +464,19 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _editStoreName(BuildContext context) {
-    final controller = TextEditingController(text: 'Kirana Store');
+    final controller = TextEditingController();
+
+    // Load current store name
+    _service.getStoreName().first.then((name) {
+      controller.text = name;
+    });
 
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Edit Store Name',
           style: TextStyle(
@@ -480,7 +509,11 @@ class HomeScreen extends StatelessWidget {
                 TextStyle(color: Colors.white.withOpacity(0.45))),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              await _service.updateStoreName(name);
+              if (!context.mounted) return;
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -512,8 +545,8 @@ class HomeScreen extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

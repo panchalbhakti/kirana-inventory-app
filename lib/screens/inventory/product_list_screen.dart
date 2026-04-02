@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/product_provider.dart';
 import '../../widgets/product_card.dart';
 import 'add_product_screen.dart';
+import 'scan_product_screen.dart';
 
 class ProductListScreen extends StatelessWidget {
   @override
@@ -30,15 +31,13 @@ class ProductListScreen extends StatelessWidget {
                         child: Row(
                           children: [
                             Icon(Icons.arrow_back_ios_rounded,
-                                color: Colors.white.withOpacity(0.45), size: 14),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Back',
-                              style: TextStyle(
-                                fontSize: 13,
                                 color: Colors.white.withOpacity(0.45),
-                              ),
-                            ),
+                                size: 14),
+                            const SizedBox(width: 4),
+                            Text('Back',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.white.withOpacity(0.45))),
                           ],
                         ),
                       ),
@@ -53,27 +52,58 @@ class ProductListScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  // Add Button
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        transitionDuration: const Duration(milliseconds: 400),
-                        pageBuilder: (_, __, ___) => AddProductScreen(),
-                        transitionsBuilder: (_, animation, __, child) =>
-                            FadeTransition(opacity: animation, child: child),
+                  Row(
+                    children: [
+                      // Scan Button
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          PageRouteBuilder(
+                            transitionDuration:
+                            const Duration(milliseconds: 400),
+                            pageBuilder: (_, __, ___) => ScanProductScreen(),
+                            transitionsBuilder: (_, animation, __, child) =>
+                                FadeTransition(
+                                    opacity: animation, child: child),
+                          ),
+                        ),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3498DB),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.document_scanner_rounded,
+                              color: Colors.white, size: 22),
+                        ),
                       ),
-                    ),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2ECC71),
-                        borderRadius: BorderRadius.circular(12),
+                      const SizedBox(width: 10),
+                      // Add Button
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          PageRouteBuilder(
+                            transitionDuration:
+                            const Duration(milliseconds: 400),
+                            pageBuilder: (_, __, ___) => AddProductScreen(),
+                            transitionsBuilder: (_, animation, __, child) =>
+                                FadeTransition(
+                                    opacity: animation, child: child),
+                          ),
+                        ),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2ECC71),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.add_rounded,
+                              color: Colors.black, size: 24),
+                        ),
                       ),
-                      child: const Icon(Icons.add_rounded,
-                          color: Colors.black, size: 24),
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -81,7 +111,6 @@ class ProductListScreen extends StatelessWidget {
 
             const SizedBox(height: 8),
 
-            // Product count
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Text(
@@ -95,7 +124,6 @@ class ProductListScreen extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // Product List
             Expanded(
               child: provider.products.isEmpty
                   ? Center(
@@ -103,7 +131,8 @@ class ProductListScreen extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.inventory_2_outlined,
-                        color: Colors.white.withOpacity(0.15), size: 56),
+                        color: Colors.white.withOpacity(0.15),
+                        size: 56),
                     const SizedBox(height: 16),
                     Text(
                       'No products yet',

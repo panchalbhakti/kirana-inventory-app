@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/billing_provider.dart';
 import '../../widgets/bill_item_tile.dart';
+import '../../models/product_model.dart';
 import 'bill_summary_screen.dart';
+import 'dart:io';
 
 class BillingScreen extends StatefulWidget {
   @override
@@ -13,6 +17,8 @@ class BillingScreen extends StatefulWidget {
 class _BillingScreenState extends State<BillingScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _isScanning = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void dispose() {
@@ -20,12 +26,218 @@ class _BillingScreenState extends State<BillingScreen> {
     super.dispose();
   }
 
+  Future<void> _scanAndAddToCart() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 80,
+    );
+    if (picked == null) return;
+
+    setState(() => _isScanning = true);
+
+    final textRecognizer = TextRecognizer();
+    final inputImage = InputImage.fromFile(File(picked.path));
+
+    try {
+      final RecognizedText recognizedText =
+      await textRecognizer.processImage(inputImage);
+      final text = recognizedText.text;
+      print("Scanned text: $text");
+
+      final products = context.read<ProductProvider>().products;
+      final billing = context.read<BillingProvider>();
+
+      final words = text
+          .toLowerCase()
+          .split(RegExp(r'[\s\n,]+'))
+          .where((w) => w.length > 2)
+          .toList();
+
+      final matched = products.where((product) {
+        final productName = product.name.toLowerCase();
+        return words.any((word) =>
+        productName.contains(word) || word.contains(productName));
+      }).toList();
+
+      setState(() => _isScanning = false);
+
+      if (matched.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFE74C3C),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            content: const Text(
+              'No matching products found. Try a clearer photo!',
+              style: TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (matched.length == 1) {
+        // Only one match — add directly to cart
+        _addMatchedProduct(matched.first, billing);
+      } else {
+        // Multiple matches — show selection dialog
+        _showMatchDialog(matched, billing);
+      }
+    } catch (e) {
+      print("Scan error: $e");
+      setState(() => _isScanning = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFE74C3C),
+          behavior: SnackBarBehavior.floating,
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: const Text(
+            'Could not scan image. Please try again.',
+            style: TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+    } finally {
+      textRecognizer.close();
+    }
+  }
+
+  void _addMatchedProduct(Product product, BillingProvider billing) {
+    final currentQty = billing.cart[product] ?? 0;
+    if (currentQty >= product.quantity) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFE74C3C),
+          behavior: SnackBarBehavior.floating,
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Text(
+            'Only ${product.quantity} units available for ${product.name}',
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+      return;
+    }
+    billing.addToCart(product);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF2ECC71),
+        behavior: SnackBarBehavior.floating,
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(
+          '✓ ${product.name} added to cart!',
+          style: const TextStyle(
+              color: Colors.black, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  void _showMatchDialog(List<Product> products, BillingProvider billing) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Multiple matches found',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Select the product to add to cart',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white.withOpacity(0.45),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...products.map((p) => GestureDetector(
+              onTap: () {
+                Navigator.pop(context);
+                _addMatchedProduct(p, billing);
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: const Color(0xFF2ECC71).withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2ECC71).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.shopping_bag_rounded,
+                          color: Color(0xFF2ECC71), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(p.name,
+                              style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white)),
+                          Text('₹${p.price} • Stock: ${p.quantity}',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withOpacity(0.45))),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.add_circle_rounded,
+                        color: Color(0xFF2ECC71), size: 24),
+                  ],
+                ),
+              ),
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final products = context.watch<ProductProvider>().products;
     final billing = context.watch<BillingProvider>();
 
-    // Filter products based on search query
     final filteredProducts = products
         .where((p) =>
         p.name.toLowerCase().contains(_searchQuery.toLowerCase()))
@@ -41,6 +253,7 @@ class _BillingScreenState extends State<BillingScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
@@ -54,6 +267,45 @@ class _BillingScreenState extends State<BillingScreen> {
                                 fontSize: 13,
                                 color: Colors.white.withOpacity(0.45))),
                       ],
+                    ),
+                  ),
+                  // Scan Button
+                  GestureDetector(
+                    onTap: _isScanning ? null : _scanAndAddToCart,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _isScanning
+                            ? const Color(0xFF3498DB).withOpacity(0.5)
+                            : const Color(0xFF3498DB),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: _isScanning
+                          ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white),
+                        ),
+                      )
+                          : const Row(
+                        children: [
+                          Icon(Icons.document_scanner_rounded,
+                              color: Colors.white, size: 18),
+                          SizedBox(width: 6),
+                          Text(
+                            'Scan',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -92,10 +344,7 @@ class _BillingScreenState extends State<BillingScreen> {
                   onChanged: (value) {
                     setState(() => _searchQuery = value);
                   },
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Search products...',
                     hintStyle: TextStyle(
@@ -115,11 +364,9 @@ class _BillingScreenState extends State<BillingScreen> {
                         _searchController.clear();
                         setState(() => _searchQuery = '');
                       },
-                      child: Icon(
-                        Icons.close_rounded,
-                        color: Colors.white.withOpacity(0.4),
-                        size: 18,
-                      ),
+                      child: Icon(Icons.close_rounded,
+                          color: Colors.white.withOpacity(0.4),
+                          size: 18),
                     )
                         : null,
                     border: InputBorder.none,
@@ -164,7 +411,7 @@ class _BillingScreenState extends State<BillingScreen> {
 
             // Product Selection List
             SizedBox(
-              height: 200,
+              height: 180,
               child: filteredProducts.isEmpty
                   ? Center(
                 child: Column(

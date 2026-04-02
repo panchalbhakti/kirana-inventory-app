@@ -6,6 +6,17 @@ import '../models/customer_model.dart';
 class FirebaseService {
   final _db = FirebaseFirestore.instance;
 
+  // STORE SETTINGS
+  Future<void> updateStoreName(String name) async {
+    _db.collection('settings').doc('store').set({'name': name});
+  }
+
+  Stream<String> getStoreName() {
+    return _db.collection('settings').doc('store').snapshots().map((doc) {
+      return doc.exists ? (doc['name'] ?? 'Kirana Store') : 'Kirana Store';
+    });
+  }
+
   // PRODUCTS
   Future<void> addProduct(Product product) async {
     _db.collection('products').add(product.toMap());

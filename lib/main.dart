@@ -5,6 +5,7 @@ import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/product_provider.dart';
 import 'providers/billing_provider.dart';
+import 'providers/subscription_provider.dart';
 import 'screens/splash/splash_screen.dart';
 
 void main() async {
@@ -22,6 +23,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ProductProvider()),
         ChangeNotifierProvider(create: (_) => BillingProvider()),
+        ChangeNotifierProvider(create: (_) => SubscriptionProvider()..init()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

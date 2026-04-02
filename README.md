@@ -37,6 +37,11 @@ A smart mobile application built using **Flutter and Firebase** to help small gr
 
 ---
 
+## 📸 Screenshots
+
+*## 📸 Screenshots
+<img src="screenshots/dashboard.png" width="300"/>
+
 ## ⚙️ Installation
 
 1. Clone the repository

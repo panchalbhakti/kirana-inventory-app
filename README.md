@@ -42,7 +42,7 @@ A smart mobile application built using **Flutter and Firebase** to help small gr
 1. Clone the repository
 
    ```bash
-   git clone https://github.com/your-username/kirana-inventory-app.git
+   git clone https://github.com/panchalbhakti/kirana-inventory-app.git
    ```
 
 2. Navigate to project folder

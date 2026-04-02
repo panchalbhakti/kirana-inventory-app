@@ -85,6 +85,3 @@ This application is designed with simplicity in mind so that even non-technical 
 * Barcode scanning integration
 * Multi-user support
 * Cloud backup & analytics enhancements
-
-
-Your Name

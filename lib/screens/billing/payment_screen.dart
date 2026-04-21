@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/billing_provider.dart';
+import '../../models/product_model.dart';
+import '../../services/firebase_service.dart';
+import '../../services/bill_pdf_service.dart';
 
 enum PaymentMethod { upi, card, cash }
 
@@ -18,6 +21,11 @@ class _PaymentScreenState extends State<PaymentScreen>
   PaymentMethod _selectedMethod = PaymentMethod.upi;
   bool _isProcessing = false;
   bool _paymentDone = false;
+
+  // Saved before confirmBill() clears the cart
+  Map<Product, int> _cartSnapshot = {};
+  String _storeName = 'Kirana Store';
+  bool _isGeneratingPdf = false;
 
   // UPI
   final _upiController = TextEditingController();
@@ -60,10 +68,15 @@ class _PaymentScreenState extends State<PaymentScreen>
 
     setState(() => _isProcessing = true);
 
+    final billing = context.read<BillingProvider>();
+
+    // ── Save cart + store name BEFORE confirmBill() clears the cart ──
+    _cartSnapshot = Map<Product, int>.from(billing.cart);
+    _storeName = await FirebaseService().getStoreName().first;
+
     // Simulate payment gateway delay
     await Future.delayed(const Duration(seconds: 2));
 
-    final billing = context.read<BillingProvider>();
     await billing.confirmBill();
 
     setState(() {
@@ -895,15 +908,87 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
 
-                // Done Button
+                // ── Download / Share Bill Button ──────────────────
+                GestureDetector(
+                  onTap: _isGeneratingPdf
+                      ? null
+                      : () async {
+                    setState(() => _isGeneratingPdf = true);
+                    try {
+                      await BillPdfService.generateAndShare(
+                        context: context,
+                        storeName: _storeName,
+                        cartItems: _cartSnapshot,
+                        total: widget.total,
+                        paymentMethod: _methodLabel(),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        backgroundColor: const Color(0xFFE74C3C),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        content: Text(
+                          'Could not generate PDF: $e',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ));
+                    } finally {
+                      if (mounted) setState(() => _isGeneratingPdf = false);
+                    }
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFF3498DB).withOpacity(0.4),
+                      ),
+                    ),
+                    child: _isGeneratingPdf
+                        ? const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                              Color(0xFF3498DB)),
+                        ),
+                      ),
+                    )
+                        : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.picture_as_pdf_rounded,
+                            color: Color(0xFF3498DB), size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Download / Share Bill',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF3498DB),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── Done Button ───────────────────────────────────
                 GestureDetector(
                   onTap: () {
-                    // Pop back to billing screen (pop 2 screens: payment + cart)
-                    Navigator.of(context)
-                        .popUntil((route) => route.isFirst == false &&
-                        route.settings.name != '/cart');
+                    Navigator.of(context).pop();
                     Navigator.of(context).pop();
                     Navigator.of(context).pop();
                   },
@@ -916,8 +1001,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                            color:
-                            const Color(0xFF2ECC71).withOpacity(0.3),
+                            color: const Color(0xFF2ECC71).withOpacity(0.3),
                             blurRadius: 16,
                             offset: const Offset(0, 6))
                       ],

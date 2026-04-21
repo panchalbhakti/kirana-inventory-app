@@ -6,7 +6,8 @@ import '../models/customer_model.dart';
 class FirebaseService {
   final _db = FirebaseFirestore.instance;
 
-  // STORE SETTINGS
+  // ─── STORE SETTINGS ────────────────────────────────────────────
+
   Future<void> updateStoreName(String name) async {
     _db.collection('settings').doc('store').set({'name': name});
   }
@@ -17,7 +18,8 @@ class FirebaseService {
     });
   }
 
-  // PRODUCTS
+  // ─── PRODUCTS ──────────────────────────────────────────────────
+
   Future<void> addProduct(Product product) async {
     _db.collection('products').add(product.toMap());
   }
@@ -34,11 +36,13 @@ class FirebaseService {
     _db.collection('products').doc(id).delete();
   }
 
-  Future<void> updateProductQuantity(String id, int newQuantity) async {
+  /// Quantity is now double to support kg, g, litre, ml, etc.
+  Future<void> updateProductQuantity(String id, double newQuantity) async {
     _db.collection('products').doc(id).update({'quantity': newQuantity});
   }
 
-  // BILLS
+  // ─── BILLS ─────────────────────────────────────────────────────
+
   Future<void> addBill(Bill bill) async {
     _db.collection('bills').add(bill.toMap());
   }
@@ -55,7 +59,8 @@ class FirebaseService {
     });
   }
 
-  // CUSTOMERS
+  // ─── CUSTOMERS ─────────────────────────────────────────────────
+
   Future<void> addCustomer(Customer customer) async {
     _db.collection('customers').add(customer.toMap());
   }

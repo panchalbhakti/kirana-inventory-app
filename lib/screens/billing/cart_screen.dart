@@ -324,7 +324,7 @@ class CartScreen extends StatelessWidget {
 
 class _CartItemCard extends StatelessWidget {
   final Product product;
-  final int qty;
+  final double qty;
   final BillingProvider billing;
 
   const _CartItemCard({
@@ -432,10 +432,10 @@ class _CartItemCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _qtyButton(
-                        icon: qty <= 1
+                        icon: qty <= product.unit.minQty
                             ? Icons.delete_outline_rounded
                             : Icons.remove_rounded,
-                        color: qty <= 1
+                        color: qty <= product.unit.minQty
                             ? const Color(0xFFE74C3C)
                             : Colors.white.withOpacity(0.6),
                         onTap: () => billing.decrementFromCart(product),
@@ -444,7 +444,7 @@ class _CartItemCard extends StatelessWidget {
                         padding:
                         const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
-                          '$qty',
+                          _qtyLabel(qty, product.unit),
                           style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -469,6 +469,12 @@ class _CartItemCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _qtyLabel(double qty, ProductUnit unit) {
+    if (unit == ProductUnit.pcs) return qty.toInt().toString();
+    if (qty == qty.truncateToDouble()) return '${qty.toInt()} ${unit.label}';
+    return '${qty.toStringAsFixed(qty >= 1 ? 1 : 2)} ${unit.label}';
   }
 
   Widget _qtyButton({

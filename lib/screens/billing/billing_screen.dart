@@ -188,7 +188,16 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
+
+  // ── Unit-aware quantity formatter ────────────────────────────────────────
+  String _formatQty(double qty, ProductUnit unit) {
+    if (unit == ProductUnit.pcs) return '${qty.toInt()}';
+    if (qty == qty.truncateToDouble()) return '${qty.toInt()} ${unit.label}';
+    return '${qty.toStringAsFixed(qty >= 1 ? 1 : 2)} ${unit.label}';
+  }
+
   // ─── Build ─────────────────────────────────────────────────────
+
 
   @override
   Widget build(BuildContext context) {
@@ -469,8 +478,8 @@ class _BillingScreenState extends State<BillingScreen> {
                 itemCount: filteredProducts.length,
                 itemBuilder: (_, i) {
                   final p = filteredProducts[i];
-                  final currentQty = billing.cart[p] ?? 0;
-                  final inCart = currentQty > 0;
+                  final currentQty = billing.cart[p] ?? 0.0;
+                  final inCart = currentQty > 0.0;
                   final isMaxReached = currentQty >= p.quantity;
 
                   return Container(
@@ -542,7 +551,8 @@ class _BillingScreenState extends State<BillingScreen> {
                                         borderRadius:
                                         BorderRadius.circular(6),
                                       ),
-                                      child: Text('In cart: $currentQty',
+                                      child: Text(
+                                          'In cart: ${_formatQty(currentQty, p.unit)}',
                                           style: const TextStyle(
                                               fontSize: 10,
                                               color: Color(0xFF3498DB),

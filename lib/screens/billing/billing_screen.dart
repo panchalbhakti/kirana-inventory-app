@@ -4,9 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/billing_provider.dart';
-import '../../widgets/bill_item_tile.dart';
 import '../../models/product_model.dart';
-import 'bill_summary_screen.dart';
+import 'cart_screen.dart';
 import 'dart:io';
 
 class BillingScreen extends StatefulWidget {
@@ -26,6 +25,8 @@ class _BillingScreenState extends State<BillingScreen> {
     super.dispose();
   }
 
+  // ─── Scan & Add to Cart ────────────────────────────────────────
+
   Future<void> _scanAndAddToCart() async {
     final picked = await _picker.pickImage(
       source: ImageSource.camera,
@@ -34,7 +35,6 @@ class _BillingScreenState extends State<BillingScreen> {
     if (picked == null) return;
 
     setState(() => _isScanning = true);
-
     final textRecognizer = TextRecognizer();
     final inputImage = InputImage.fromFile(File(picked.path));
 
@@ -42,7 +42,6 @@ class _BillingScreenState extends State<BillingScreen> {
       final RecognizedText recognizedText =
       await textRecognizer.processImage(inputImage);
       final text = recognizedText.text;
-      print("Scanned text: $text");
 
       final products = context.read<ProductProvider>().products;
       final billing = context.read<BillingProvider>();
@@ -55,52 +54,27 @@ class _BillingScreenState extends State<BillingScreen> {
 
       final matched = products.where((product) {
         final productName = product.name.toLowerCase();
-        return words.any((word) =>
-        productName.contains(word) || word.contains(productName));
+        return words.any(
+                (word) => productName.contains(word) || word.contains(productName));
       }).toList();
 
       setState(() => _isScanning = false);
 
       if (matched.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFFE74C3C),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            content: const Text(
-              'No matching products found. Try a clearer photo!',
-              style: TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w600),
-            ),
-          ),
-        );
+        _showSnack('No matching products found. Try a clearer photo!',
+            const Color(0xFFE74C3C));
         return;
       }
 
       if (matched.length == 1) {
-        // Only one match — add directly to cart
         _addMatchedProduct(matched.first, billing);
       } else {
-        // Multiple matches — show selection dialog
         _showMatchDialog(matched, billing);
       }
     } catch (e) {
-      print("Scan error: $e");
       setState(() => _isScanning = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFE74C3C),
-          behavior: SnackBarBehavior.floating,
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: const Text(
-            'Could not scan image. Please try again.',
-            style: TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w600),
-          ),
-        ),
-      );
+      _showSnack('Could not scan image. Please try again.',
+          const Color(0xFFE74C3C));
     } finally {
       textRecognizer.close();
     }
@@ -109,35 +83,25 @@ class _BillingScreenState extends State<BillingScreen> {
   void _addMatchedProduct(Product product, BillingProvider billing) {
     final currentQty = billing.cart[product] ?? 0;
     if (currentQty >= product.quantity) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFE74C3C),
-          behavior: SnackBarBehavior.floating,
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: Text(
-            'Only ${product.quantity} units available for ${product.name}',
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w600),
-          ),
-        ),
-      );
+      _showSnack('Only ${product.quantity} units available for ${product.name}',
+          const Color(0xFFE74C3C));
       return;
     }
     billing.addToCart(product);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: const Color(0xFF2ECC71),
-        behavior: SnackBarBehavior.floating,
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        content: Text(
-          '✓ ${product.name} added to cart!',
-          style: const TextStyle(
-              color: Colors.black, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
+    _showSnack('✓ ${product.name} added to cart!', const Color(0xFF2ECC71),
+        dark: true);
+  }
+
+  void _showSnack(String msg, Color bg, {bool dark = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: bg,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      content: Text(msg,
+          style: TextStyle(
+              color: dark ? Colors.black : Colors.white,
+              fontWeight: FontWeight.w600)),
+    ));
   }
 
   void _showMatchDialog(List<Product> products, BillingProvider billing) {
@@ -145,8 +109,7 @@ class _BillingScreenState extends State<BillingScreen> {
       context: context,
       backgroundColor: const Color(0xFF1E1E1E),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         child: Column(
@@ -156,27 +119,19 @@ class _BillingScreenState extends State<BillingScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Multiple matches found',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
+            const Text('Multiple matches found',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white)),
             const SizedBox(height: 4),
-            Text(
-              'Select the product to add to cart',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.white.withOpacity(0.45),
-              ),
-            ),
+            Text('Select the product to add to cart',
+                style: TextStyle(
+                    fontSize: 13, color: Colors.white.withOpacity(0.45))),
             const SizedBox(height: 16),
             ...products.map((p) => GestureDetector(
               onTap: () {
@@ -233,14 +188,17 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
+  // ─── Build ─────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final products = context.watch<ProductProvider>().products;
     final billing = context.watch<BillingProvider>();
+    final cartCount = billing.itemCount;
 
     final filteredProducts = products
-        .where((p) =>
-        p.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .where(
+            (p) => p.name.toLowerCase().contains(_searchQuery.toLowerCase()))
         .toList();
 
     return Scaffold(
@@ -249,12 +207,13 @@ class _BillingScreenState extends State<BillingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // ── Header ──────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  // Back
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Row(
@@ -269,51 +228,126 @@ class _BillingScreenState extends State<BillingScreen> {
                       ],
                     ),
                   ),
-                  // Scan Button
-                  GestureDetector(
-                    onTap: _isScanning ? null : _scanAndAddToCart,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: _isScanning
-                            ? const Color(0xFF3498DB).withOpacity(0.5)
-                            : const Color(0xFF3498DB),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: _isScanning
-                          ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white),
+
+                  Row(
+                    children: [
+                      // Scan Button
+                      GestureDetector(
+                        onTap: _isScanning ? null : _scanAndAddToCart,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _isScanning
+                                ? const Color(0xFF3498DB).withOpacity(0.5)
+                                : const Color(0xFF3498DB),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: _isScanning
+                              ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white),
+                            ),
+                          )
+                              : const Row(
+                            children: [
+                              Icon(Icons.document_scanner_rounded,
+                                  color: Colors.white, size: 18),
+                              SizedBox(width: 6),
+                              Text('Scan',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white)),
+                            ],
+                          ),
                         ),
-                      )
-                          : const Row(
-                        children: [
-                          Icon(Icons.document_scanner_rounded,
-                              color: Colors.white, size: 18),
-                          SizedBox(width: 6),
-                          Text(
-                            'Scan',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                      ),
+
+                      const SizedBox(width: 10),
+
+                      // Cart Icon with Badge
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          PageRouteBuilder(
+                            transitionDuration:
+                            const Duration(milliseconds: 350),
+                            pageBuilder: (_, __, ___) => const CartScreen(),
+                            transitionsBuilder:
+                                (_, animation, __, child) => SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(1.0, 0.0),
+                                end: Offset.zero,
+                              ).animate(CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic)),
+                              child: child,
                             ),
                           ),
-                        ],
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E1E1E),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: cartCount > 0
+                                      ? const Color(0xFF2ECC71)
+                                      .withOpacity(0.4)
+                                      : Colors.white.withOpacity(0.08),
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.shopping_cart_rounded,
+                                color: cartCount > 0
+                                    ? const Color(0xFF2ECC71)
+                                    : Colors.white.withOpacity(0.45),
+                                size: 22,
+                              ),
+                            ),
+                            if (cartCount > 0)
+                              Positioned(
+                                top: -6,
+                                right: -6,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF2ECC71),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                      minWidth: 20, minHeight: 20),
+                                  child: Text(
+                                    cartCount > 99 ? '99+' : '$cartCount',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ],
               ),
             ),
 
             const Padding(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
+              padding: EdgeInsets.fromLTRB(20, 14, 20, 0),
               child: Text(
                 'Billing',
                 style: TextStyle(
@@ -326,7 +360,7 @@ class _BillingScreenState extends State<BillingScreen> {
 
             const SizedBox(height: 20),
 
-            // Search Bar
+            // ── Search Bar ────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
@@ -341,16 +375,12 @@ class _BillingScreenState extends State<BillingScreen> {
                 ),
                 child: TextField(
                   controller: _searchController,
-                  onChanged: (value) {
-                    setState(() => _searchQuery = value);
-                  },
+                  onChanged: (value) => setState(() => _searchQuery = value),
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Search products...',
                     hintStyle: TextStyle(
-                      color: Colors.white.withOpacity(0.25),
-                      fontSize: 14,
-                    ),
+                        color: Colors.white.withOpacity(0.25), fontSize: 14),
                     prefixIcon: Icon(
                       Icons.search_rounded,
                       color: _searchQuery.isNotEmpty
@@ -377,9 +407,9 @@ class _BillingScreenState extends State<BillingScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-            // Products Section Label
+            // ── Section Label ─────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
@@ -398,10 +428,9 @@ class _BillingScreenState extends State<BillingScreen> {
                     Text(
                       '${filteredProducts.length} result${filteredProducts.length == 1 ? '' : 's'}',
                       style: TextStyle(
-                        fontSize: 12,
-                        color: const Color(0xFF3498DB).withOpacity(0.8),
-                        fontWeight: FontWeight.w500,
-                      ),
+                          fontSize: 12,
+                          color: const Color(0xFF3498DB).withOpacity(0.8),
+                          fontWeight: FontWeight.w500),
                     ),
                 ],
               ),
@@ -409,9 +438,8 @@ class _BillingScreenState extends State<BillingScreen> {
 
             const SizedBox(height: 10),
 
-            // Product Selection List
-            SizedBox(
-              height: 180,
+            // ── Product List ──────────────────────────────────────
+            Expanded(
               child: filteredProducts.isEmpty
                   ? Center(
                 child: Column(
@@ -422,16 +450,16 @@ class _BillingScreenState extends State<BillingScreen> {
                           ? Icons.search_off_rounded
                           : Icons.inventory_2_outlined,
                       color: Colors.white.withOpacity(0.15),
-                      size: 36,
+                      size: 48,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     Text(
                       _searchQuery.isNotEmpty
                           ? 'No products found'
                           : 'No products available',
                       style: TextStyle(
                           color: Colors.white.withOpacity(0.3),
-                          fontSize: 13),
+                          fontSize: 14),
                     ),
                   ],
                 ),
@@ -441,12 +469,12 @@ class _BillingScreenState extends State<BillingScreen> {
                 itemCount: filteredProducts.length,
                 itemBuilder: (_, i) {
                   final p = filteredProducts[i];
-                  final inCart = billing.cart.containsKey(p);
                   final currentQty = billing.cart[p] ?? 0;
+                  final inCart = currentQty > 0;
                   final isMaxReached = currentQty >= p.quantity;
 
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
+                    margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 12),
                     decoration: BoxDecoration(
@@ -463,89 +491,92 @@ class _BillingScreenState extends State<BillingScreen> {
                     ),
                     child: Row(
                       children: [
+                        // Product Icon
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2ECC71)
+                                .withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.shopping_bag_outlined,
+                              color: Color(0xFF2ECC71), size: 20),
+                        ),
+                        const SizedBox(width: 12),
+
+                        // Name & Price
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                p.name,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white,
-                                ),
-                              ),
+                              Text(p.name,
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white)),
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  Text(
-                                    '₹${p.price}',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFF2ECC71),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
+                                  Text('₹${p.price}',
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Color(0xFF2ECC71),
+                                          fontWeight: FontWeight.w600)),
                                   const SizedBox(width: 8),
-                                  Text(
-                                    'Stock: ${p.quantity}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: isMaxReached
-                                          ? const Color(0xFFE74C3C)
-                                          : Colors.white
-                                          .withOpacity(0.35),
-                                    ),
-                                  ),
+                                  Text('Stock: ${p.quantity}',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: isMaxReached
+                                              ? const Color(0xFFE74C3C)
+                                              : Colors.white
+                                              .withOpacity(0.35))),
                                   if (inCart) ...[
                                     const SizedBox(width: 8),
-                                    Text(
-                                      'Added: $currentQty',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF3498DB),
-                                        fontWeight: FontWeight.w500,
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF3498DB)
+                                            .withOpacity(0.15),
+                                        borderRadius:
+                                        BorderRadius.circular(6),
                                       ),
+                                      child: Text('In cart: $currentQty',
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              color: Color(0xFF3498DB),
+                                              fontWeight:
+                                              FontWeight.w600)),
                                     ),
-                                  ]
+                                  ],
                                 ],
                               ),
                             ],
                           ),
                         ),
+
+                        // Add Button
                         GestureDetector(
                           onTap: () {
                             if (isMaxReached) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(
-                                SnackBar(
-                                  backgroundColor:
-                                  const Color(0xFFE74C3C),
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12)),
-                                  content: Text(
-                                    'Only ${p.quantity} units available for ${p.name}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              );
+                              _showSnack(
+                                  'Only ${p.quantity} units available for ${p.name}',
+                                  const Color(0xFFE74C3C));
                               return;
                             }
                             billing.addToCart(p);
                           },
-                          child: Container(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
                             width: 36,
                             height: 36,
                             decoration: BoxDecoration(
                               color: isMaxReached
                                   ? const Color(0xFFE74C3C)
                                   .withOpacity(0.3)
+                                  : inCart
+                                  ? const Color(0xFF2ECC71)
                                   : const Color(0xFF3498DB),
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -565,134 +596,83 @@ class _BillingScreenState extends State<BillingScreen> {
               ),
             ),
 
-            const SizedBox(height: 20),
-
-            // Cart Section Label
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'CART',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withOpacity(0.35),
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  if (billing.cart.isNotEmpty)
-                    GestureDetector(
-                      onTap: () => billing.clearCart(),
-                      child: Text(
-                        'Clear',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: const Color(0xFFE74C3C).withOpacity(0.8),
-                          fontWeight: FontWeight.w500,
+            // ── View Cart Banner (shown when cart has items) ───────
+            if (cartCount > 0)
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    transitionDuration: const Duration(milliseconds: 350),
+                    pageBuilder: (_, __, ___) => const CartScreen(),
+                    transitionsBuilder: (_, animation, __, child) =>
+                        SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0.0, 1.0),
+                            end: Offset.zero,
+                          ).animate(CurvedAnimation(
+                              parent: animation, curve: Curves.easeOutCubic)),
+                          child: child,
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // Cart Items
-            Expanded(
-              child: billing.cart.isEmpty
-                  ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.shopping_cart_outlined,
-                        color: Colors.white.withOpacity(0.15),
-                        size: 48),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Cart is empty',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.3),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-                  : ListView(
-                children: billing.cart.entries
-                    .map((e) =>
-                    BillItemTile(product: e.key, qty: e.value))
-                    .toList(),
-              ),
-            ),
-
-            // Total & Proceed
-            if (billing.cart.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E),
-                  border: Border(
-                    top: BorderSide(color: Colors.white.withOpacity(0.06)),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Total Amount',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withOpacity(0.45),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '₹${billing.total.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF2ECC71),
-                          ),
-                        ),
-                      ],
+                child: Container(
+                  margin:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2ECC71), Color(0xFF27AE60)],
                     ),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          transitionDuration:
-                          const Duration(milliseconds: 400),
-                          pageBuilder: (_, __, ___) => BillSummaryScreen(),
-                          transitionsBuilder: (_, animation, __, child) =>
-                              FadeTransition(
-                                  opacity: animation, child: child),
-                        ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF2ECC71).withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 14),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2ECC71),
-                          borderRadius: BorderRadius.circular(14),
+                          color: Colors.black.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
-                          'Proceed',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black,
+                        child: Text(
+                          '$cartCount',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      const Text(
+                        'View Cart',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '₹${billing.total.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_ios_rounded,
+                          color: Colors.black, size: 14),
+                    ],
+                  ),
                 ),
               ),
           ],

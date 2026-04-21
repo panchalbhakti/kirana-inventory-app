@@ -7,16 +7,36 @@ class BillingProvider with ChangeNotifier {
   final FirebaseService _service = FirebaseService();
   Map<Product, int> cart = {};
 
+  // ─── Cart Operations ───────────────────────────────────────────
+
   void addToCart(Product product) {
     final currentQty = cart[product] ?? 0;
-
-    if (currentQty >= product.quantity) {
-      return;
-    }
-
+    if (currentQty >= product.quantity) return;
     cart.update(product, (value) => value + 1, ifAbsent: () => 1);
     notifyListeners();
   }
+
+  void removeFromCart(Product product) {
+    cart.remove(product);
+    notifyListeners();
+  }
+
+  void decrementFromCart(Product product) {
+    if (!cart.containsKey(product)) return;
+    if (cart[product]! <= 1) {
+      cart.remove(product);
+    } else {
+      cart[product] = cart[product]! - 1;
+    }
+    notifyListeners();
+  }
+
+  void clearCart() {
+    cart.clear();
+    notifyListeners();
+  }
+
+  // ─── Totals ────────────────────────────────────────────────────
 
   double get total {
     double sum = 0;
@@ -26,6 +46,14 @@ class BillingProvider with ChangeNotifier {
     return sum;
   }
 
+  int get itemCount {
+    int count = 0;
+    cart.forEach((_, qty) => count += qty);
+    return count;
+  }
+
+  // ─── Confirm Bill ──────────────────────────────────────────────
+
   Future<void> confirmBill() async {
     try {
       final bill = Bill(
@@ -34,36 +62,21 @@ class BillingProvider with ChangeNotifier {
         date: DateTime.now(),
       );
 
-      print("Cart items: ${cart.length}");
-
-      // Save cart snapshot before clearing
       final cartSnapshot = Map<Product, int>.from(cart);
 
-      // Clear cart immediately — don't wait for Firebase
       cart.clear();
       notifyListeners();
 
-      // Fire Firebase calls in background without awaiting
       for (final entry in cartSnapshot.entries) {
         final product = entry.key;
         final soldQty = entry.value;
         final newQuantity = product.quantity - soldQty;
-        // print("Updating product: ${product.id} | name: ${product.name} | new qty: $newQuantity");
-        _service.updateProductQuantity(product.id, newQuantity); // no await
+        _service.updateProductQuantity(product.id, newQuantity);
       }
 
-      print("Saving bill...");
-      _service.addBill(bill); // no await
-      print("Bill saved!");
-
+      _service.addBill(bill);
     } catch (e) {
-      print("ERROR in confirmBill: $e");
       rethrow;
     }
-  }
-
-  void clearCart() {
-    cart.clear();
-    notifyListeners();
   }
 }

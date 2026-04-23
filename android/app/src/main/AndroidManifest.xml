@@ -4,9 +4,8 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
 
-
     <application
-        android:label="app_dev_project"
+        android:label="SmartKirana"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

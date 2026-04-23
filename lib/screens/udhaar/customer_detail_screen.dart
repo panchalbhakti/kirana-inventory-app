@@ -1,454 +1,174 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../core/theme/app_theme.dart';
 import '../../models/customer_model.dart';
 import '../../services/firebase_service.dart';
 
 class CustomerDetailScreen extends StatefulWidget {
   final Customer customer;
-
-  const CustomerDetailScreen({required this.customer});
-
+  const CustomerDetailScreen({super.key, required this.customer});
   @override
-  _CustomerDetailScreenState createState() => _CustomerDetailScreenState();
+  State<CustomerDetailScreen> createState() => _CustomerDetailScreenState();
 }
 
 class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
-  final payController = TextEditingController();
-  final creditController = TextEditingController();
+  final _payCtrl = TextEditingController();
+  final _creditCtrl = TextEditingController();
 
   @override
-  void dispose() {
-    payController.dispose();
-    creditController.dispose();
-    super.dispose();
-  }
+  void dispose() { _payCtrl.dispose(); _creditCtrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D0D),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Row(
-                  children: [
-                    Icon(Icons.arrow_back_ios_rounded,
-                        color: Colors.white.withOpacity(0.45), size: 14),
-                    const SizedBox(width: 4),
-                    Text('Back',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withOpacity(0.45))),
-                  ],
+      backgroundColor: K.bg,
+      body: SafeArea(child: Column(children: [
+        // ── Header ────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: Row(children: [
+            const KBack(),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => _confirmDelete(context),
+              child: Container(width: 36, height: 36,
+                  decoration: BoxDecoration(color: K.red.withOpacity(0.08), borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: K.red.withOpacity(0.2))),
+                  child: const Icon(Icons.delete_outline_rounded, color: K.red, size: 17)),
+            ),
+          ]),
+        ),
+
+        // ── Customer Identity ─────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: Row(children: [
+            Container(width: 56, height: 56,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [K.green.withOpacity(0.3), K.green.withOpacity(0.1)]),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-              ),
-            ),
+                child: Center(child: Text(widget.customer.name[0].toUpperCase(),
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: K.green)))),
+            const SizedBox(width: 16),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(widget.customer.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: K.t1)),
+              Text(widget.customer.phone, style: const TextStyle(fontSize: 14, color: K.t2)),
+            ]),
+          ]),
+        ),
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: Row(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE67E22).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
+        const SizedBox(height: 20),
+
+        Expanded(child: StreamBuilder<List<Customer>>(
+          stream: FirebaseService().getCustomerById(widget.customer.id),
+          builder: (ctx, snap) {
+            final c = snap.hasData && snap.data!.isNotEmpty ? snap.data!.first : widget.customer;
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(children: [
+                // ── Stats ──────────────────────────────────
+                Row(children: [
+                  KStat(label: 'Total Credit', value: '₹${c.totalCredit.toStringAsFixed(0)}', color: K.red),
+                  const SizedBox(width: 12),
+                  KStat(label: 'Total Paid', value: '₹${c.totalPaid.toStringAsFixed(0)}', color: K.green),
+                ]),
+                const SizedBox(height: 12),
+
+                // ── Outstanding ────────────────────────────
+                Container(
+                  width: double.infinity, padding: const EdgeInsets.all(K.md+4),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: c.outstanding > 0
+                          ? [K.amber.withOpacity(0.08), K.amber.withOpacity(0.03)]
+                          : [K.green.withOpacity(0.08), K.green.withOpacity(0.03)],
                     ),
-                    child: Center(
-                      child: Text(
-                        widget.customer.name[0].toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFFE67E22),
-                        ),
-                      ),
-                    ),
+                    borderRadius: BorderRadius.circular(K.r3),
+                    border: Border.all(color: c.outstanding > 0 ? K.amber.withOpacity(0.25) : K.green.withOpacity(0.25)),
                   ),
-                  const SizedBox(width: 16),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.customer.name,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Outstanding Balance', style: TextStyle(fontSize: 12, color: K.t2)),
+                      const SizedBox(height: 6),
+                      Text('₹${c.outstanding.toStringAsFixed(2)}',
+                          style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5,
+                              color: c.outstanding > 0 ? K.amber : K.green)),
+                    ]),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: c.outstanding > 0 ? K.amber.withOpacity(0.1) : K.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      Text(
-                        widget.customer.phone,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white.withOpacity(0.4),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            Expanded(
-              child: StreamBuilder<List<Customer>>(
-                stream: FirebaseService().getCustomerById(widget.customer.id),
-                builder: (context, snapshot) {
-                  final customer = snapshot.hasData && snapshot.data!.isNotEmpty
-                      ? snapshot.data!.first
-                      : widget.customer;
-
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      children: [
-                        // Stats
-                        Row(
-                          children: [
-                            _statCard(
-                                'Total Credit',
-                                '₹${customer.totalCredit.toStringAsFixed(0)}',
-                                const Color(0xFFE74C3C)),
-                            const SizedBox(width: 12),
-                            _statCard(
-                                'Total Paid',
-                                '₹${customer.totalPaid.toStringAsFixed(0)}',
-                                const Color(0xFF2ECC71)),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E1E1E),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: customer.outstanding > 0
-                                  ? const Color(0xFFE67E22).withOpacity(0.3)
-                                  : const Color(0xFF2ECC71).withOpacity(0.3),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Outstanding Balance',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white.withOpacity(0.45),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '₹${customer.outstanding.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w700,
-                                  color: customer.outstanding > 0
-                                      ? const Color(0xFFE67E22)
-                                      : const Color(0xFF2ECC71),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Record Payment
-                        _sectionTitle('Record Payment'),
-                        const SizedBox(height: 12),
-                        _amountField(
-                          payController,
-                          'Payment Amount',
-                          'e.g. 200.00',
-                          Icons.payments_rounded,
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () {
-                            final amount =
-                            double.tryParse(payController.text.trim());
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  backgroundColor: const Color(0xFFE74C3C),
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12)),
-                                  content: const Text(
-                                      'Enter a valid amount',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600)),
-                                ),
-                              );
-                              return;
-                            }
-                            // Fire in background
-                            FirebaseService()
-                                .recordPayment(widget.customer.id, amount);
-                            payController.clear();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFF2ECC71),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                content: const Text('✓ Payment recorded!',
-                                    style: TextStyle(
-                                        color: Colors.black,
-                                        fontWeight: FontWeight.w600)),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2ECC71),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Text(
-                              'Record Payment',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Add More Credit
-                        _sectionTitle('Add More Credit'),
-                        const SizedBox(height: 12),
-                        _amountField(
-                          creditController,
-                          'Credit Amount',
-                          'e.g. 300.00',
-                          Icons.add_card_rounded,
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () {
-                            final amount =
-                            double.tryParse(creditController.text.trim());
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  backgroundColor: const Color(0xFFE74C3C),
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12)),
-                                  content: const Text(
-                                      'Enter a valid amount',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600)),
-                                ),
-                              );
-                              return;
-                            }
-                            // Fire in background
-                            FirebaseService()
-                                .addMoreCredit(widget.customer.id, amount);
-                            creditController.clear();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFFE67E22),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                content: const Text('✓ Credit added!',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600)),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE67E22),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Text(
-                              'Add Credit',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Delete Customer
-                        GestureDetector(
-                          onTap: () {
-                            showDialog(
-                              context: context,
-                              builder: (_) => AlertDialog(
-                                backgroundColor: const Color(0xFF1E1E1E),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16)),
-                                title: const Text('Delete Customer',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600)),
-                                content: Text(
-                                  'Are you sure you want to delete ${widget.customer.name}?',
-                                  style: TextStyle(
-                                      color: Colors.white.withOpacity(0.6)),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: Text('Cancel',
-                                        style: TextStyle(
-                                            color: Colors.white
-                                                .withOpacity(0.45))),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      FirebaseService()
-                                          .deleteCustomer(widget.customer.id);
-                                      Navigator.pop(context);
-                                      Navigator.pop(context);
-                                    },
-                                    child: const Text('Delete',
-                                        style: TextStyle(
-                                            color: Color(0xFFE74C3C),
-                                            fontWeight: FontWeight.w600)),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(
-                              color:
-                              const Color(0xFFE74C3C).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: const Color(0xFFE74C3C)
-                                      .withOpacity(0.3)),
-                            ),
-                            child: const Text(
-                              'Delete Customer',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFFE74C3C),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-                      ],
+                      child: Icon(
+                          c.outstanding > 0 ? Icons.account_balance_wallet_rounded : Icons.check_circle_rounded,
+                          color: c.outstanding > 0 ? K.amber : K.green, size: 28),
                     ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+                  ]),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ── Record Payment ─────────────────────────
+                const Align(alignment: Alignment.centerLeft, child: KLabel('Record Payment')),
+                const SizedBox(height: 12),
+                KField(controller: _payCtrl, label: 'Payment Amount', hint: 'e.g. 200.00',
+                    icon: Icons.payments_rounded, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    formatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))]),
+                const SizedBox(height: 12),
+                KBtn(label: 'Record Payment', icon: Icons.check_rounded, onTap: () => _recordPayment(ctx)),
+
+                const SizedBox(height: 24),
+
+                // ── Add Credit ─────────────────────────────
+                const Align(alignment: Alignment.centerLeft, child: KLabel('Add More Credit')),
+                const SizedBox(height: 12),
+                KField(controller: _creditCtrl, label: 'Credit Amount', hint: 'e.g. 300.00',
+                    icon: Icons.add_card_rounded, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    formatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))]),
+                const SizedBox(height: 12),
+                KBtn(label: 'Add Credit', icon: Icons.add_rounded, danger: false, ghost: true, onTap: () => _addCredit(ctx)),
+
+                const SizedBox(height: 32),
+              ]),
+            );
+          },
+        )),
+      ])),
     );
   }
 
-  Widget _statCard(String label, String value, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.white.withOpacity(0.45))),
-            const SizedBox(height: 6),
-            Text(value,
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: color)),
-          ],
-        ),
-      ),
-    );
+  void _recordPayment(BuildContext ctx) {
+    final amount = double.tryParse(_payCtrl.text.trim());
+    if (amount == null || amount <= 0) { kSnack(ctx, 'Enter a valid amount', ok: false); return; }
+    FirebaseService().recordPayment(widget.customer.id, amount);
+    _payCtrl.clear();
+    kSnack(ctx, '✓ Payment of ₹${amount.toStringAsFixed(0)} recorded!');
   }
 
-  Widget _sectionTitle(String title) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Colors.white.withOpacity(0.35),
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
+  void _addCredit(BuildContext ctx) {
+    final amount = double.tryParse(_creditCtrl.text.trim());
+    if (amount == null || amount <= 0) { kSnack(ctx, 'Enter a valid amount', ok: false); return; }
+    FirebaseService().addMoreCredit(widget.customer.id, amount);
+    _creditCtrl.clear();
+    kSnack(ctx, '✓ Credit of ₹${amount.toStringAsFixed(0)} added!', ok: false);
   }
 
-  Widget _amountField(TextEditingController controller, String label,
-      String hint, IconData icon) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))
-        ],
-        style: const TextStyle(color: Colors.white, fontSize: 15),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(
-              color: Colors.white.withOpacity(0.2), fontSize: 14),
-          prefixIcon: Icon(icon,
-              color: const Color(0xFFE67E22).withOpacity(0.7), size: 20),
-          border: InputBorder.none,
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        ),
-      ),
-    );
+  void _confirmDelete(BuildContext ctx) {
+    showDialog(context: ctx, builder: (_) => AlertDialog(
+      backgroundColor: K.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(K.r3)),
+      title: const Text('Delete Customer', style: TextStyle(color: K.t1, fontWeight: FontWeight.w600)),
+      content: Text('Remove ${widget.customer.name} from your records?', style: const TextStyle(color: K.t2, fontSize: 14)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: K.t2))),
+        TextButton(onPressed: () {
+          FirebaseService().deleteCustomer(widget.customer.id);
+          Navigator.pop(ctx); Navigator.pop(ctx);
+        }, child: const Text('Delete', style: TextStyle(color: K.red, fontWeight: FontWeight.w600))),
+      ],
+    ));
   }
 }

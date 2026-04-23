@@ -1,1074 +1,453 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme/app_theme.dart';
 import '../../providers/billing_provider.dart';
 import '../../models/product_model.dart';
 import '../../services/firebase_service.dart';
 import '../../services/bill_pdf_service.dart';
 
-enum PaymentMethod { upi, card, cash }
+enum _Method { upi, card, cash }
 
 class PaymentScreen extends StatefulWidget {
   final double total;
   const PaymentScreen({super.key, required this.total});
-
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
-class _PaymentScreenState extends State<PaymentScreen>
-    with TickerProviderStateMixin {
-  PaymentMethod _selectedMethod = PaymentMethod.upi;
-  bool _isProcessing = false;
-  bool _paymentDone = false;
+class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateMixin {
+  _Method _method = _Method.upi;
+  bool _processing = false, _done = false, _pdfLoading = false;
 
-  // Saved before confirmBill() clears the cart
-  Map<Product, int> _cartSnapshot = {};
+  final _upiCtrl = TextEditingController();
+  final _cardNumCtrl = TextEditingController();
+  final _expiryCtrl = TextEditingController();
+  final _cvvCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _cashCtrl = TextEditingController();
+
+  late AnimationController _successCtrl;
+  late Animation<double> _successScale;
+  Map<Product, double> _cartSnapshot = {};
   String _storeName = 'Kirana Store';
-  bool _isGeneratingPdf = false;
-
-  // UPI
-  final _upiController = TextEditingController();
-
-  // Card
-  final _cardNumberController = TextEditingController();
-  final _expiryController = TextEditingController();
-  final _cvvController = TextEditingController();
-  final _nameController = TextEditingController();
-
-  // Cash
-  final _cashController = TextEditingController();
-
-  late AnimationController _successAnimController;
-  late Animation<double> _scaleAnim;
 
   @override
   void initState() {
     super.initState();
-    _successAnimController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
-    _scaleAnim = CurvedAnimation(
-        parent: _successAnimController, curve: Curves.elasticOut);
+    _successCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _successScale = CurvedAnimation(parent: _successCtrl, curve: Curves.elasticOut);
   }
 
   @override
   void dispose() {
-    _upiController.dispose();
-    _cardNumberController.dispose();
-    _expiryController.dispose();
-    _cvvController.dispose();
-    _nameController.dispose();
-    _cashController.dispose();
-    _successAnimController.dispose();
+    _successCtrl.dispose();
+    for (final c in [_upiCtrl, _cardNumCtrl, _expiryCtrl, _cvvCtrl, _nameCtrl, _cashCtrl]) c.dispose();
     super.dispose();
   }
 
-  Future<void> _processPayment() async {
-    if (!_validateForm()) return;
-
-    setState(() => _isProcessing = true);
-
-    final billing = context.read<BillingProvider>();
-
-    // ── Save cart + store name BEFORE confirmBill() clears the cart ──
-    _cartSnapshot = Map<Product, int>.from(billing.cart);
-    _storeName = await FirebaseService().getStoreName().first;
-
-    // Simulate payment gateway delay
-    await Future.delayed(const Duration(seconds: 2));
-
-    await billing.confirmBill();
-
-    setState(() {
-      _isProcessing = false;
-      _paymentDone = true;
-    });
-
-    _successAnimController.forward();
-  }
-
-  bool _validateForm() {
-    switch (_selectedMethod) {
-      case PaymentMethod.upi:
-        if (_upiController.text.trim().isEmpty ||
-            !_upiController.text.contains('@')) {
-          _showError('Please enter a valid UPI ID (e.g. name@upi)');
-          return false;
-        }
+  bool _validate() {
+    switch (_method) {
+      case _Method.upi:
+        if (!_upiCtrl.text.contains('@')) { kSnack(context, 'Enter a valid UPI ID (e.g. name@upi)', ok: false); return false; }
         break;
-      case PaymentMethod.card:
-        final cardNum =
-        _cardNumberController.text.replaceAll(' ', '');
-        if (cardNum.length < 16) {
-          _showError('Enter a valid 16-digit card number');
-          return false;
-        }
-        if (_expiryController.text.length < 5) {
-          _showError('Enter valid expiry date (MM/YY)');
-          return false;
-        }
-        if (_cvvController.text.length < 3) {
-          _showError('Enter valid CVV');
-          return false;
-        }
-        if (_nameController.text.trim().isEmpty) {
-          _showError('Enter cardholder name');
-          return false;
-        }
+      case _Method.card:
+        if (_cardNumCtrl.text.replaceAll(' ', '').length < 16) { kSnack(context, 'Enter a valid 16-digit card number', ok: false); return false; }
+        if (_expiryCtrl.text.length < 5) { kSnack(context, 'Enter valid expiry (MM/YY)', ok: false); return false; }
+        if (_cvvCtrl.text.length < 3) { kSnack(context, 'Enter valid CVV', ok: false); return false; }
+        if (_nameCtrl.text.trim().isEmpty) { kSnack(context, 'Enter cardholder name', ok: false); return false; }
         break;
-      case PaymentMethod.cash:
-        final entered = double.tryParse(_cashController.text) ?? 0;
-        if (entered < widget.total) {
-          _showError(
-              'Cash entered (₹${entered.toStringAsFixed(0)}) is less than total');
-          return false;
-        }
+      case _Method.cash:
+        final entered = double.tryParse(_cashCtrl.text) ?? 0;
+        if (entered < widget.total) { kSnack(context, '₹${(widget.total - entered).toStringAsFixed(0)} more needed', ok: false); return false; }
         break;
     }
     return true;
   }
 
-  void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      backgroundColor: const Color(0xFFE74C3C),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      content: Text(msg,
-          style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.w600)),
-    ));
+  Future<void> _pay() async {
+    if (!_validate()) return;
+    setState(() => _processing = true);
+    final billing = context.read<BillingProvider>();
+    _cartSnapshot = Map<Product, double>.from(billing.cart);
+    _storeName = await FirebaseService().getStoreName().first;
+    await Future.delayed(const Duration(seconds: 2));
+    await billing.confirmBill();
+    setState(() { _processing = false; _done = true; });
+    _successCtrl.forward();
+  }
+
+  String get _methodLabel {
+    switch (_method) {
+      case _Method.upi: return 'UPI';
+      case _Method.card: return 'Credit/Debit Card';
+      case _Method.cash: return 'Cash';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_paymentDone) return _buildSuccessScreen();
+    if (_done) return _SuccessScreen(
+      total: widget.total, method: _methodLabel,
+      cartSnapshot: _cartSnapshot, storeName: _storeName,
+      pdfLoading: _pdfLoading,
+      onPdf: () async {
+        setState(() => _pdfLoading = true);
+        try {
+          await BillPdfService.generateAndShare(
+              context: context, storeName: _storeName,
+              cartItems: _cartSnapshot, total: widget.total, paymentMethod: _methodLabel);
+        } catch (e) {
+          if (mounted) kSnack(context, 'PDF error: $e', ok: false);
+        } finally {
+          if (mounted) setState(() => _pdfLoading = false);
+        }
+      },
+      onDone: () { Navigator.of(context).pop(); Navigator.of(context).pop(); Navigator.of(context).pop(); },
+      scaleAnim: _successScale,
+    );
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D0D),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── Header ──────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Row(
-                      children: [
-                        Icon(Icons.arrow_back_ios_rounded,
-                            color: Colors.white.withOpacity(0.45), size: 14),
-                        const SizedBox(width: 4),
-                        Text('Back',
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.white.withOpacity(0.45))),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Payment',
-                  style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Amount to pay',
-                  style: TextStyle(
-                      fontSize: 13, color: Colors.white.withOpacity(0.4)),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '₹${widget.total.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF2ECC71),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ),
-            ),
-
-            // ── Payment Method Selector ──────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  _methodTab('UPI', Icons.account_balance_rounded,
-                      PaymentMethod.upi, const Color(0xFF9B59B6)),
-                  const SizedBox(width: 10),
-                  _methodTab('Card', Icons.credit_card_rounded,
-                      PaymentMethod.card, const Color(0xFF3498DB)),
-                  const SizedBox(width: 10),
-                  _methodTab('Cash', Icons.payments_rounded,
-                      PaymentMethod.cash, const Color(0xFF2ECC71)),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // ── Payment Form ─────────────────────────────────────
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildForm(),
-              ),
-            ),
-
-            // ── Pay Button ───────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-              child: GestureDetector(
-                onTap: _isProcessing ? null : _processPayment,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    gradient: _isProcessing
-                        ? null
-                        : const LinearGradient(
-                        colors: [Color(0xFF2ECC71), Color(0xFF27AE60)]),
-                    color: _isProcessing
-                        ? const Color(0xFF2ECC71).withOpacity(0.4)
-                        : null,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: _isProcessing
-                        ? null
-                        : [
-                      BoxShadow(
-                        color: const Color(0xFF2ECC71).withOpacity(0.3),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      )
-                    ],
-                  ),
-                  child: _isProcessing
-                      ? const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.black),
-                      ),
-                    ),
-                  )
-                      : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(_payButtonIcon(), color: Colors.black, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        _payButtonLabel(),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+      backgroundColor: K.bg,
+      body: SafeArea(child: Column(children: [
+        // ── Header ──────────────────────────────────────────
+        const Padding(padding: EdgeInsets.fromLTRB(20, 20, 20, 0), child: Align(alignment: Alignment.centerLeft, child: KBack())),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: Row(children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Payment', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: K.t1, letterSpacing: -0.5)),
+              Text('Amount due', style: const TextStyle(fontSize: 13, color: K.t2)),
+            ]),
+            const Spacer(),
+            Text('₹${widget.total.toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: K.green, letterSpacing: -0.5)),
+          ]),
         ),
-      ),
+
+        const SizedBox(height: 20),
+
+        // ── Method Tabs ──────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(children: [
+            _tab('UPI', Icons.account_balance_rounded, _Method.upi, K.purple),
+            const SizedBox(width: 10),
+            _tab('Card', Icons.credit_card_rounded, _Method.card, K.blue),
+            const SizedBox(width: 10),
+            _tab('Cash', Icons.payments_rounded, _Method.cash, K.green),
+          ]),
+        ),
+
+        const SizedBox(height: 20),
+
+        Expanded(child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: _buildForm(),
+        )),
+
+        // ── Pay Button ───────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: KBtn(
+            label: _method == _Method.upi ? 'Pay via UPI' : _method == _Method.card ? 'Pay ₹${widget.total.toStringAsFixed(2)}' : 'Confirm Payment',
+            icon: _method == _Method.upi ? Icons.qr_code_scanner_rounded : _method == _Method.card ? Icons.credit_card_rounded : Icons.check_circle_rounded,
+            loading: _processing, onTap: _pay,
+          ),
+        ),
+      ])),
     );
   }
 
-  // ── Method Tab ────────────────────────────────────────────────────────────
-
-  Widget _methodTab(
-      String label, IconData icon, PaymentMethod method, Color color) {
-    final isSelected = _selectedMethod == method;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedMethod = method),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.15) : const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isSelected ? color.withOpacity(0.5) : Colors.white.withOpacity(0.06),
-              width: isSelected ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: isSelected ? color : Colors.white.withOpacity(0.35), size: 22),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? color : Colors.white.withOpacity(0.35),
-                ),
-              ),
-            ],
-          ),
+  Widget _tab(String label, IconData icon, _Method method, Color color) {
+    final active = _method == method;
+    return Expanded(child: GestureDetector(
+      onTap: () => setState(() => _method = method),
+      child: AnimatedContainer(duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          color: active ? color.withOpacity(0.1) : K.surfaceEl,
+          borderRadius: BorderRadius.circular(K.r2),
+          border: Border.all(color: active ? color.withOpacity(0.4) : K.b2, width: active ? 1.5 : 1),
         ),
+        child: Column(children: [
+          Icon(icon, color: active ? color : K.t3, size: 20),
+          const SizedBox(height: 5),
+          Text(label, style: TextStyle(fontSize: 11, fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+              color: active ? color : K.t3)),
+        ]),
       ),
-    );
+    ));
   }
-
-  // ── Forms ─────────────────────────────────────────────────────────────────
 
   Widget _buildForm() {
-    switch (_selectedMethod) {
-      case PaymentMethod.upi:
-        return _buildUpiForm();
-      case PaymentMethod.card:
-        return _buildCardForm();
-      case PaymentMethod.cash:
-        return _buildCashForm();
+    switch (_method) {
+      case _Method.upi: return _UpiForm(ctrl: _upiCtrl);
+      case _Method.card: return _CardForm(numCtrl: _cardNumCtrl, expiryCtrl: _expiryCtrl, cvvCtrl: _cvvCtrl, nameCtrl: _nameCtrl);
+      case _Method.cash: return _CashForm(ctrl: _cashCtrl, total: widget.total);
     }
   }
+}
 
-  Widget _buildUpiForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionLabel('UPI ID'),
-        _inputField(
-          controller: _upiController,
-          hint: 'yourname@upi / yourname@okicici',
-          icon: Icons.alternate_email_rounded,
-          iconColor: const Color(0xFF9B59B6),
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 20),
-        _sectionLabel('POPULAR UPI APPS'),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _upiAppChip('GPay', const Color(0xFF4285F4)),
+// ─── UPI Form ─────────────────────────────────────────────────────────────────
+
+class _UpiForm extends StatelessWidget {
+  final TextEditingController ctrl;
+  const _UpiForm({required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    const apps = [('GPay', K.blue), ('PhonePe', K.purple), ('Paytm', Color(0xFF00BAF2)), ('BHIM', K.green)];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      KField(controller: ctrl, label: 'UPI ID', hint: 'yourname@upi or yourname@okicici',
+          icon: Icons.alternate_email_rounded, keyboardType: TextInputType.emailAddress),
+      const SizedBox(height: 20),
+      const KLabel('Popular UPI Apps'),
+      const SizedBox(height: 10),
+      Row(children: apps.map((app) => Expanded(child: Container(
+        margin: app.$1 != 'BHIM' ? const EdgeInsets.only(right: 8) : EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(color: app.$2.withOpacity(0.08), borderRadius: BorderRadius.circular(K.r1),
+            border: Border.all(color: app.$2.withOpacity(0.2))),
+        child: Text(app.$1, textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: app.$2)),
+      ))).toList()),
+      const SizedBox(height: 16),
+      Container(padding: const EdgeInsets.all(K.md),
+          decoration: BoxDecoration(color: K.purple.withOpacity(0.06), borderRadius: BorderRadius.circular(K.r2),
+              border: Border.all(color: K.purple.withOpacity(0.15))),
+          child: Row(children: [
+            const Icon(Icons.security_rounded, color: K.purple, size: 16),
             const SizedBox(width: 10),
-            _upiAppChip('PhonePe', const Color(0xFF5F259F)),
-            const SizedBox(width: 10),
-            _upiAppChip('Paytm', const Color(0xFF00BAF2)),
-            const SizedBox(width: 10),
-            _upiAppChip('BHIM', const Color(0xFF1A237E)),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF9B59B6).withOpacity(0.08),
-            borderRadius: BorderRadius.circular(12),
-            border:
-            Border.all(color: const Color(0xFF9B59B6).withOpacity(0.2)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.security_rounded,
-                  color: Color(0xFF9B59B6), size: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Secured with 256-bit encryption. Your UPI details are never stored.',
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.white.withOpacity(0.5)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+            Expanded(child: Text('Secured with 256-bit encryption. UPI details are never stored.',
+                style: TextStyle(fontSize: 12, color: K.t2))),
+          ])),
+    ]);
   }
+}
 
-  Widget _upiAppChip(String name, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Text(
-          name,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w600, color: color),
-        ),
-      ),
-    );
-  }
+// ─── Card Form ─────────────────────────────────────────────────────────────────
 
-  Widget _buildCardForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Card Preview
-        Container(
-          height: 180,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF1A3A6C), Color(0xFF2C3E7A)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                  color: const Color(0xFF3498DB).withOpacity(0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8))
-            ],
-          ),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Icon(Icons.credit_card_rounded,
-                      color: Colors.white, size: 28),
-                  Container(
-                    width: 40,
-                    height: 28,
+class _CardForm extends StatelessWidget {
+  final TextEditingController numCtrl, expiryCtrl, cvvCtrl, nameCtrl;
+  const _CardForm({required this.numCtrl, required this.expiryCtrl, required this.cvvCtrl, required this.nameCtrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // Card preview
+      ValueListenableBuilder(valueListenable: numCtrl, builder: (_, __, ___) =>
+          ValueListenableBuilder(valueListenable: nameCtrl, builder: (_, __, ___) =>
+              ValueListenableBuilder(valueListenable: expiryCtrl, builder: (_, __, ___) {
+                final raw = numCtrl.text.replaceAll(' ', '').padRight(16, '•');
+                final formatted = raw.replaceAllMapped(RegExp(r'.{4}'), (m) => '${m.group(0)} ').trim();
+                return Container(height: 170,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFD700).withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(4),
+                      gradient: const LinearGradient(colors: [Color(0xFF1A2A5C), Color(0xFF2C3A8C)],
+                          begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      borderRadius: BorderRadius.circular(K.r3),
+                      boxShadow: [BoxShadow(color: K.blue.withOpacity(0.25), blurRadius: 20, offset: const Offset(0, 8))],
                     ),
-                    child: const Center(
-                      child: Text('VISA',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF1A237E))),
-                    ),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              ValueListenableBuilder(
-                valueListenable: _cardNumberController,
-                builder: (_, __, ___) {
-                  final raw = _cardNumberController.text.replaceAll(' ', '');
-                  final padded = raw.padRight(16, '•');
-                  final formatted = padded
-                      .replaceAllMapped(RegExp(r'.{4}'), (m) => '${m.group(0)} ')
-                      .trim();
-                  return Text(formatted,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          letterSpacing: 3,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white));
-                },
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  ValueListenableBuilder(
-                    valueListenable: _nameController,
-                    builder: (_, __, ___) => Text(
-                      _nameController.text.isEmpty
-                          ? 'CARDHOLDER NAME'
-                          : _nameController.text.toUpperCase(),
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white.withOpacity(0.7),
-                          letterSpacing: 1),
-                    ),
-                  ),
-                  ValueListenableBuilder(
-                    valueListenable: _expiryController,
-                    builder: (_, __, ___) => Text(
-                      _expiryController.text.isEmpty
-                          ? 'MM/YY'
-                          : _expiryController.text,
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white.withOpacity(0.7)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+                    padding: const EdgeInsets.all(20),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                        const Icon(Icons.credit_card_rounded, color: Colors.white, size: 26),
+                        Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: const Color(0xFFFFD700).withOpacity(0.9), borderRadius: BorderRadius.circular(4)),
+                            child: const Text('VISA', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF1A237E)))),
+                      ]),
+                      const Spacer(),
+                      Text(formatted, style: const TextStyle(fontSize: 16, letterSpacing: 3, color: Colors.white, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 10),
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                        Text(nameCtrl.text.isEmpty ? 'CARDHOLDER NAME' : nameCtrl.text.toUpperCase(),
+                            style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.65), letterSpacing: 1)),
+                        Text(expiryCtrl.text.isEmpty ? 'MM/YY' : expiryCtrl.text,
+                            style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.65))),
+                      ]),
+                    ]));
+              }))),
 
-        const SizedBox(height: 24),
-
-        _sectionLabel('CARD NUMBER'),
-        _inputField(
-          controller: _cardNumberController,
-          hint: '0000 0000 0000 0000',
-          icon: Icons.credit_card_rounded,
-          iconColor: const Color(0xFF3498DB),
-          keyboardType: TextInputType.number,
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            _CardNumberFormatter(),
-          ],
-          maxLength: 19,
-        ),
-
-        const SizedBox(height: 14),
-
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _sectionLabel('EXPIRY DATE'),
-                  _inputField(
-                    controller: _expiryController,
-                    hint: 'MM/YY',
-                    icon: Icons.calendar_month_rounded,
-                    iconColor: const Color(0xFF3498DB),
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      _ExpiryFormatter(),
-                    ],
-                    maxLength: 5,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _sectionLabel('CVV'),
-                  _inputField(
-                    controller: _cvvController,
-                    hint: '•••',
-                    icon: Icons.lock_rounded,
-                    iconColor: const Color(0xFF3498DB),
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    maxLength: 3,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 14),
-
-        _sectionLabel('NAME ON CARD'),
-        _inputField(
-          controller: _nameController,
-          hint: 'Full name as on card',
-          icon: Icons.person_rounded,
-          iconColor: const Color(0xFF3498DB),
-          keyboardType: TextInputType.name,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
-          ],
-        ),
-
-        const SizedBox(height: 16),
-      ],
-    );
+      const SizedBox(height: 20),
+      KField(controller: numCtrl, label: 'Card Number', hint: '0000 0000 0000 0000',
+          icon: Icons.credit_card_rounded, keyboardType: TextInputType.number, maxLength: 19,
+          formatters: [FilteringTextInputFormatter.digitsOnly, _CardFmt()]),
+      const SizedBox(height: 14),
+      Row(children: [
+        Expanded(child: KField(controller: expiryCtrl, label: 'Expiry', hint: 'MM/YY',
+            icon: Icons.calendar_month_rounded, keyboardType: TextInputType.number, maxLength: 5,
+            formatters: [FilteringTextInputFormatter.digitsOnly, _ExpiryFmt()])),
+        const SizedBox(width: 14),
+        Expanded(child: KField(controller: cvvCtrl, label: 'CVV', hint: '•••',
+            icon: Icons.lock_rounded, keyboardType: TextInputType.number, maxLength: 3, obscure: true,
+            formatters: [FilteringTextInputFormatter.digitsOnly])),
+      ]),
+      const SizedBox(height: 14),
+      KField(controller: nameCtrl, label: 'Name on Card', hint: 'Full name',
+          icon: Icons.person_rounded, keyboardType: TextInputType.name,
+          formatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]'))]),
+      const SizedBox(height: 16),
+    ]);
   }
+}
 
-  Widget _buildCashForm() {
-    final cashEntered = double.tryParse(_cashController.text) ?? 0;
-    final change = cashEntered - widget.total;
+// ─── Cash Form ─────────────────────────────────────────────────────────────────
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Amount due card
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2ECC71).withOpacity(0.08),
-            borderRadius: BorderRadius.circular(16),
-            border:
-            Border.all(color: const Color(0xFF2ECC71).withOpacity(0.2)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Amount Due',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white.withOpacity(0.45))),
-                  const SizedBox(height: 4),
-                  Text('₹${widget.total.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF2ECC71))),
-                ],
-              ),
-              const Icon(Icons.payments_rounded,
-                  color: Color(0xFF2ECC71), size: 40),
-            ],
-          ),
-        ),
+class _CashForm extends StatefulWidget {
+  final TextEditingController ctrl;
+  final double total;
+  const _CashForm({required this.ctrl, required this.total});
+  @override
+  State<_CashForm> createState() => _CashFormState();
+}
 
-        const SizedBox(height: 24),
+class _CashFormState extends State<_CashForm> {
+  @override
+  Widget build(BuildContext context) {
+    final entered = double.tryParse(widget.ctrl.text) ?? 0;
+    final change = entered - widget.total;
 
-        _sectionLabel('CASH RECEIVED FROM CUSTOMER'),
-        _inputField(
-          controller: _cashController,
-          hint: '0.00',
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(padding: const EdgeInsets.all(K.md+4),
+          decoration: BoxDecoration(color: K.green.withOpacity(0.06), borderRadius: BorderRadius.circular(K.r3),
+              border: Border.all(color: K.green.withOpacity(0.18))),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Amount Due', style: TextStyle(fontSize: 12, color: K.t2)),
+              const SizedBox(height: 4),
+              Text('₹${widget.total.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: K.green, letterSpacing: -0.5)),
+            ]),
+            const Icon(Icons.payments_rounded, color: K.green, size: 38),
+          ])),
+      const SizedBox(height: 20),
+      KField(controller: widget.ctrl, label: 'Cash Received', hint: '0.00',
           icon: Icons.currency_rupee_rounded,
-          iconColor: const Color(0xFF2ECC71),
-          keyboardType:
-          const TextInputType.numberWithOptions(decimal: true),
-          onChanged: (_) => setState(() {}),
-        ),
-
-        const SizedBox(height: 20),
-
-        // Change to return
-        if (cashEntered >= widget.total)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF3498DB).withOpacity(0.08),
-              borderRadius: BorderRadius.circular(14),
-              border:
-              Border.all(color: const Color(0xFF3498DB).withOpacity(0.2)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Change to Return',
-                    style: TextStyle(
-                        fontSize: 14, color: Colors.white.withOpacity(0.7))),
-                Text(
-                  '₹${change.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF3498DB),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else if (_cashController.text.isNotEmpty && cashEntered < widget.total)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE74C3C).withOpacity(0.08),
-              borderRadius: BorderRadius.circular(14),
-              border:
-              Border.all(color: const Color(0xFFE74C3C).withOpacity(0.2)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded,
-                    color: Color(0xFFE74C3C), size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  '₹${(widget.total - cashEntered).toStringAsFixed(2)} more needed',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFFE74C3C),
-                      fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => setState(() {})),
+      const SizedBox(height: 14),
+      if (entered >= widget.total)
+        Container(padding: const EdgeInsets.all(K.md),
+            decoration: BoxDecoration(color: K.blue.withOpacity(0.07), borderRadius: BorderRadius.circular(K.r2),
+                border: Border.all(color: K.blue.withOpacity(0.18))),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Change to Return', style: TextStyle(fontSize: 14, color: K.t1, fontWeight: FontWeight.w500)),
+              Text('₹${change.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: K.blue, letterSpacing: -0.5)),
+            ]))
+      else if (widget.ctrl.text.isNotEmpty)
+        Container(padding: const EdgeInsets.all(K.md),
+            decoration: BoxDecoration(color: K.red.withOpacity(0.06), borderRadius: BorderRadius.circular(K.r2),
+                border: Border.all(color: K.red.withOpacity(0.18))),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_rounded, color: K.red, size: 16),
+              const SizedBox(width: 8),
+              Text('₹${(widget.total - entered).toStringAsFixed(2)} more needed',
+                  style: const TextStyle(fontSize: 13, color: K.red, fontWeight: FontWeight.w500)),
+            ])),
+    ]);
   }
+}
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+// ─── Success Screen ────────────────────────────────────────────────────────────
 
-  Widget _sectionLabel(String label) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: Colors.white.withOpacity(0.35),
-          letterSpacing: 1.1,
-        ),
-      ),
-    );
-  }
+class _SuccessScreen extends StatelessWidget {
+  final double total;
+  final String method;
+  final Map<Product, double> cartSnapshot;
+  final String storeName;
+  final bool pdfLoading;
+  final VoidCallback onPdf, onDone;
+  final Animation<double> scaleAnim;
 
-  Widget _inputField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    required Color iconColor,
-    TextInputType keyboardType = TextInputType.text,
-    List<TextInputFormatter>? inputFormatters,
-    bool obscureText = false,
-    int? maxLength,
-    ValueChanged<String>? onChanged,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        inputFormatters: inputFormatters,
-        obscureText: obscureText,
-        maxLength: maxLength,
-        onChanged: onChanged,
-        style: const TextStyle(color: Colors.white, fontSize: 15),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(
-              color: Colors.white.withOpacity(0.2), fontSize: 14),
-          prefixIcon: Icon(icon, color: iconColor, size: 18),
-          border: InputBorder.none,
-          counterText: '',
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        ),
-      ),
-    );
-  }
+  const _SuccessScreen({required this.total, required this.method, required this.cartSnapshot,
+    required this.storeName, required this.pdfLoading, required this.onPdf,
+    required this.onDone, required this.scaleAnim});
 
-  IconData _payButtonIcon() {
-    switch (_selectedMethod) {
-      case PaymentMethod.upi:
-        return Icons.qr_code_scanner_rounded;
-      case PaymentMethod.card:
-        return Icons.credit_card_rounded;
-      case PaymentMethod.cash:
-        return Icons.check_circle_rounded;
-    }
-  }
-
-  String _payButtonLabel() {
-    switch (_selectedMethod) {
-      case PaymentMethod.upi:
-        return 'Pay via UPI';
-      case PaymentMethod.card:
-        return 'Pay ₹${widget.total.toStringAsFixed(2)}';
-      case PaymentMethod.cash:
-        return 'Confirm Cash Payment';
-    }
-  }
-
-  // ── Success Screen ────────────────────────────────────────────────────────
-
-  Widget _buildSuccessScreen() {
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D0D),
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Success animation
-                ScaleTransition(
-                  scale: _scaleAnim,
-                  child: Container(
-                    width: 110,
-                    height: 110,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2ECC71), Color(0xFF27AE60)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                            color: const Color(0xFF2ECC71).withOpacity(0.4),
-                            blurRadius: 30,
-                            offset: const Offset(0, 10))
-                      ],
-                    ),
-                    child: const Icon(Icons.check_rounded,
-                        color: Colors.white, size: 54),
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                const Text(
-                  'Payment Successful!',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                Text(
-                  'Amount of ₹${widget.total.toStringAsFixed(2)} has been received.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 14, color: Colors.white.withOpacity(0.45)),
-                ),
-
-                const SizedBox(height: 8),
-
-                Text(
-                  _methodLabel(),
-                  style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF2ECC71),
-                      fontWeight: FontWeight.w600),
-                ),
-
-                const SizedBox(height: 40),
-
-                // Bill saved indicator
-                Container(
-                  padding: const EdgeInsets.all(16),
+      backgroundColor: K.bg,
+      body: SafeArea(child: Center(child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ScaleTransition(scale: scaleAnim,
+              child: Container(width: 110, height: 110,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(14),
-                    border:
-                    Border.all(color: Colors.white.withOpacity(0.06)),
+                    gradient: const LinearGradient(colors: [Color(0xFF00E68A), Color(0xFF00B86E)]),
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: K.green.withOpacity(0.35), blurRadius: 32, offset: const Offset(0, 10))],
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF3498DB).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.receipt_long_rounded,
-                            color: Color(0xFF3498DB), size: 18),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Bill Saved',
-                                style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white)),
-                            Text('Recorded in Sales History',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white.withOpacity(0.35))),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.check_circle_rounded,
-                          color: Color(0xFF2ECC71), size: 20),
-                    ],
-                  ),
-                ),
+                  child: const Icon(Icons.check_rounded, color: Colors.black, size: 54))),
 
-                const SizedBox(height: 24),
+          const SizedBox(height: 28),
+          const Text('Payment Successful!', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: K.t1)),
+          const SizedBox(height: 8),
+          Text('₹${total.toStringAsFixed(2)} received via $method',
+              textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: K.t2)),
 
-                // ── Download / Share Bill Button ──────────────────
-                GestureDetector(
-                  onTap: _isGeneratingPdf
-                      ? null
-                      : () async {
-                    setState(() => _isGeneratingPdf = true);
-                    try {
-                      await BillPdfService.generateAndShare(
-                        context: context,
-                        storeName: _storeName,
-                        cartItems: _cartSnapshot,
-                        total: widget.total,
-                        paymentMethod: _methodLabel(),
-                      );
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        backgroundColor: const Color(0xFFE74C3C),
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        content: Text(
-                          'Could not generate PDF: $e',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ));
-                    } finally {
-                      if (mounted) setState(() => _isGeneratingPdf = false);
-                    }
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFF3498DB).withOpacity(0.4),
-                      ),
-                    ),
-                    child: _isGeneratingPdf
-                        ? const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFF3498DB)),
-                        ),
-                      ),
-                    )
-                        : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.picture_as_pdf_rounded,
-                            color: Color(0xFF3498DB), size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'Download / Share Bill',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF3498DB),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+          const SizedBox(height: 28),
+          Container(padding: const EdgeInsets.all(K.md),
+              decoration: BoxDecoration(color: K.surface, borderRadius: BorderRadius.circular(K.r2), border: Border.all(color: K.b1)),
+              child: Row(children: [
+                Container(width: 36, height: 36,
+                    decoration: BoxDecoration(color: K.green.withOpacity(0.1), borderRadius: BorderRadius.circular(9)),
+                    child: const Icon(Icons.receipt_long_rounded, color: K.green, size: 17)),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Bill Saved', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: K.t1)),
+                  const Text('Recorded in Sales History', style: TextStyle(fontSize: 12, color: K.t2)),
+                ])),
+                const Icon(Icons.check_circle_rounded, color: K.green, size: 20),
+              ])),
 
-                const SizedBox(height: 12),
+          const SizedBox(height: 28),
 
-                // ── Done Button ───────────────────────────────────
-                GestureDetector(
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pop();
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                          colors: [Color(0xFF2ECC71), Color(0xFF27AE60)]),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                            color: const Color(0xFF2ECC71).withOpacity(0.3),
-                            blurRadius: 16,
-                            offset: const Offset(0, 6))
-                      ],
-                    ),
-                    child: const Text(
-                      'Done',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          // Download PDF
+          GestureDetector(
+            onTap: pdfLoading ? null : onPdf,
+            child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 15),
+                decoration: BoxDecoration(color: K.surfaceEl, borderRadius: BorderRadius.circular(K.r2),
+                    border: Border.all(color: K.blue.withOpacity(0.35))),
+                child: pdfLoading
+                    ? const Center(child: SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(K.blue))))
+                    : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.picture_as_pdf_rounded, color: K.blue, size: 18),
+                  SizedBox(width: 8),
+                  Text('Download / Share Bill', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: K.blue)),
+                ])),
           ),
-        ),
-      ),
-    );
-  }
 
-  String _methodLabel() {
-    switch (_selectedMethod) {
-      case PaymentMethod.upi:
-        return 'Paid via UPI';
-      case PaymentMethod.card:
-        return 'Paid via Credit/Debit Card';
-      case PaymentMethod.cash:
-        return 'Paid via Cash';
-    }
-  }
-}
+          const SizedBox(height: 10),
 
-// ─── Text Input Formatters ───────────────────────────────────────────────────
-
-class _CardNumberFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    var text = newValue.text.replaceAll(' ', '');
-    if (text.length > 16) text = text.substring(0, 16);
-    final buffer = StringBuffer();
-    for (int i = 0; i < text.length; i++) {
-      if (i > 0 && i % 4 == 0) buffer.write(' ');
-      buffer.write(text[i]);
-    }
-    final formatted = buffer.toString();
-    return newValue.copyWith(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
+          KBtn(label: 'Done', onTap: onDone),
+        ]),
+      ))),
     );
   }
 }
 
-class _ExpiryFormatter extends TextInputFormatter {
+// ─── Text Formatters ───────────────────────────────────────────────────────────
+
+class _CardFmt extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    var text = newValue.text.replaceAll('/', '');
-    if (text.length > 4) text = text.substring(0, 4);
-    if (text.length >= 3) {
-      text = '${text.substring(0, 2)}/${text.substring(2)}';
-    }
-    return newValue.copyWith(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
+  TextEditingValue formatEditUpdate(TextEditingValue o, TextEditingValue n) {
+    var t = n.text.replaceAll(' ', '');
+    if (t.length > 16) t = t.substring(0, 16);
+    final b = StringBuffer();
+    for (int i = 0; i < t.length; i++) { if (i > 0 && i % 4 == 0) b.write(' '); b.write(t[i]); }
+    final f = b.toString();
+    return n.copyWith(text: f, selection: TextSelection.collapsed(offset: f.length));
+  }
+}
+
+class _ExpiryFmt extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue o, TextEditingValue n) {
+    var t = n.text.replaceAll('/', '');
+    if (t.length > 4) t = t.substring(0, 4);
+    if (t.length >= 3) t = '${t.substring(0, 2)}/${t.substring(2)}';
+    return n.copyWith(text: t, selection: TextSelection.collapsed(offset: t.length));
   }
 }

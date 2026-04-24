@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/firebase_service.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/auth_provider.dart' as ap;
+import '../auth/phone_screen.dart';
 import '../inventory/product_list_screen.dart';
 import '../billing/billing_screen.dart';
 import '../sales/sales_history_screen.dart';
@@ -332,10 +334,18 @@ class _MenuSheet extends StatelessWidget {
           const SizedBox(width: 14),
           StreamBuilder<String>(
             stream: svc.getStoreName(),
-            builder: (_, s) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(s.data ?? 'Kirana Store', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: K.t1)),
-              const Text('Kirana App v1.0.0', style: TextStyle(fontSize: 12, color: K.t2)),
-            ]),
+            builder: (ctx2, s) {
+              final user = ctx2.read<ap.AuthProvider>().currentUser;
+              final phone = user?.phoneNumber ?? '';
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(s.data ?? 'SmartKirana',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: K.t1)),
+                if (phone.isNotEmpty)
+                  Text(phone, style: const TextStyle(fontSize: 12, color: K.t2))
+                else
+                  const Text('SmartKirana App v1.0.0', style: TextStyle(fontSize: 12, color: K.t2)),
+              ]);
+            },
           ),
         ]),
         const SizedBox(height: 16),
@@ -352,6 +362,13 @@ class _MenuSheet extends StatelessWidget {
         const SizedBox(height: 6),
         _tile(context, Icons.info_outline_rounded, 'About', K.purple, () {
           Navigator.pop(context); _about(context);
+        }),
+        const SizedBox(height: 6),
+        Divider(color: K.b2),
+        const SizedBox(height: 6),
+        _tile(context, Icons.logout_rounded, 'Log Out', K.red, () {
+          Navigator.pop(context);
+          _confirmLogout(context);
         }),
       ]),
     );
@@ -374,6 +391,30 @@ class _MenuSheet extends StatelessWidget {
         ]),
       ),
     );
+  }
+
+  void _confirmLogout(BuildContext ctx) {
+    showDialog(context: ctx, builder: (_) => AlertDialog(
+      backgroundColor: K.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(K.r3)),
+      title: const Text('Log Out', style: TextStyle(color: K.t1, fontWeight: FontWeight.w600)),
+      content: const Text('Are you sure you want to log out?', style: TextStyle(color: K.t2, fontSize: 14)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: K.t2))),
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(ctx);
+            await ctx.read<ap.AuthProvider>().signOut();
+            if (!ctx.mounted) return;
+            Navigator.of(ctx).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const PhoneScreen()),
+                  (route) => false,
+            );
+          },
+          child: const Text('Log Out', style: TextStyle(color: K.red, fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ));
   }
 
   void _editName(BuildContext ctx) {
@@ -412,7 +453,7 @@ class _MenuSheet extends StatelessWidget {
             decoration: BoxDecoration(color: K.green.withOpacity(0.1), borderRadius: BorderRadius.circular(18)),
             child: const Icon(Icons.storefront_rounded, color: K.green, size: 32)),
         const SizedBox(height: 16),
-        const Text('Kirana Store', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: K.t1)),
+        const Text('SmartKirana', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: K.t1)),
         const SizedBox(height: 8),
         const Text('Smart Inventory & Billing\nVersion 1.0.0', textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: K.t2)),

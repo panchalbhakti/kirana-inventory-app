@@ -5,7 +5,6 @@ import '../../core/theme/app_theme.dart';
 import '../../services/firebase_service.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/auth_provider.dart' as ap;
-import '../auth/phone_screen.dart';
 import '../inventory/product_list_screen.dart';
 import '../billing/billing_screen.dart';
 import '../sales/sales_history_screen.dart';
@@ -394,27 +393,29 @@ class _MenuSheet extends StatelessWidget {
   }
 
   void _confirmLogout(BuildContext ctx) {
-    showDialog(context: ctx, builder: (_) => AlertDialog(
-      backgroundColor: K.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(K.r3)),
-      title: const Text('Log Out', style: TextStyle(color: K.t1, fontWeight: FontWeight.w600)),
-      content: const Text('Are you sure you want to log out?', style: TextStyle(color: K.t2, fontSize: 14)),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: K.t2))),
-        TextButton(
-          onPressed: () async {
-            Navigator.pop(ctx);
-            await ctx.read<ap.AuthProvider>().signOut();
-            if (!ctx.mounted) return;
-            Navigator.of(ctx).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const PhoneScreen()),
-                  (route) => false,
-            );
-          },
-          child: const Text('Log Out', style: TextStyle(color: K.red, fontWeight: FontWeight.w700)),
-        ),
-      ],
-    ));
+    final authProvider = ctx.read<ap.AuthProvider>();
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: K.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(K.r3)),
+        title: const Text('Log Out', style: TextStyle(color: K.t1, fontWeight: FontWeight.w600)),
+        content: const Text('Are you sure you want to log out?', style: TextStyle(color: K.t2, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel', style: TextStyle(color: K.t2)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx); // close dialog using dialog's own context
+              await authProvider.signOut(); // AuthWrapper auto-navigates to PhoneScreen
+            },
+            child: const Text('Log Out', style: TextStyle(color: K.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _editName(BuildContext ctx) {

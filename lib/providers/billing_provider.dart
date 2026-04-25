@@ -6,6 +6,10 @@ import '../models/bill_model.dart';
 class BillingProvider with ChangeNotifier {
   final _svc = FirebaseService();
   Map<Product, double> cart = {};
+  bool _saving = false;
+  String? saveError;
+
+  bool get isSaving => _saving;
 
   void addToCart(Product p) {
     final step = p.unit.cartStep;
@@ -34,14 +38,35 @@ class BillingProvider with ChangeNotifier {
   double get total => cart.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
   int get itemCount => cart.length;
 
-  Future<void> confirmBill() async {
-    final bill = Bill(id: '', total: total, date: DateTime.now());
+  Future<bool> confirmBill() async {
+    _saving = true;
+    saveError = null;
+    notifyListeners();
+
     final snapshot = Map<Product, double>.from(cart);
-    cart.clear(); notifyListeners();
-    for (final e in snapshot.entries) {
-      _svc.updateProductQuantity(e.key.id, _r(e.key.quantity - e.value));
+    final bill = Bill(id: '', total: total, date: DateTime.now());
+
+    try {
+      // Save bill to Firestore first
+      await _svc.addBill(bill);
+
+      // Update stock for each product
+      for (final e in snapshot.entries) {
+        await _svc.updateProductQuantity(e.key.id, _r(e.key.quantity - e.value));
+      }
+
+      // Only clear cart after everything succeeds
+      cart.clear();
+      _saving = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      // Firestore failed — keep cart intact, show error
+      saveError = 'Failed to save bill. Please check your connection and try again.';
+      _saving = false;
+      notifyListeners();
+      return false;
     }
-    _svc.addBill(bill);
   }
 
   double _r(double v) => (v * 1000).round() / 1000;

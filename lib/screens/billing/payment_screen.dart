@@ -72,8 +72,14 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
     _cartSnapshot = Map<Product, double>.from(billing.cart);
     _storeName = await FirebaseService().getStoreName().first;
     await Future.delayed(const Duration(seconds: 2));
-    await billing.confirmBill();
-    setState(() { _processing = false; _done = true; });
+    final success = await billing.confirmBill();
+    if (!mounted) return;
+    setState(() => _processing = false);
+    if (!success) {
+      kSnack(context, billing.saveError ?? 'Failed to save bill. Try again.', ok: false);
+      return;
+    }
+    setState(() => _done = true);
     _successCtrl.forward();
   }
 

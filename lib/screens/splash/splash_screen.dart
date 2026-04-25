@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../home/home_screen.dart';
+import '../auth/auth_wrapper.dart';
 import '../../core/theme/app_theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -38,7 +38,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       Navigator.pushReplacement(context, PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 700),
-        pageBuilder: (_, __, ___) => HomeScreen(),
+        pageBuilder: (_, __, ___) => const AuthWrapper(),
         transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
       ));
     });

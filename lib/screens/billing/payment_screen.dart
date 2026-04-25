@@ -103,7 +103,7 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
           if (mounted) setState(() => _pdfLoading = false);
         }
       },
-      onDone: () { Navigator.of(context).pop(); Navigator.of(context).pop(); Navigator.of(context).pop(); },
+      onDone: () => Navigator.of(context).popUntil((route) => route.isFirst),
       scaleAnim: _successScale,
     );
 

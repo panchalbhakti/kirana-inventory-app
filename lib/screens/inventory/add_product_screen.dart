@@ -26,9 +26,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: K.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(K.r4))),
       builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).viewInsets.bottom + 32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4, decoration: BoxDecoration(color: K.b3, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),

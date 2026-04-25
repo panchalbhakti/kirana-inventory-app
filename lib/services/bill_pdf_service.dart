@@ -127,7 +127,7 @@ class BillPdfService {
                 decoration: pw.BoxDecoration(
                   color: const PdfColor.fromInt(0xFFF0FFF8),
                   borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
-                  border: pw.Border(left: const pw.BorderSide(color: PdfColor.fromInt(0xFF00E68A), width: 3)),
+                  border: pw.Border.all(color: const PdfColor.fromInt(0xFF00E68A), width: 1.5),
                 ),
                 child: pw.Column(children: [
                   pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [

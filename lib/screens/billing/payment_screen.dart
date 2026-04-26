@@ -70,17 +70,31 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
     setState(() => _processing = true);
     final billing = context.read<BillingProvider>();
     _cartSnapshot = Map<Product, double>.from(billing.cart);
-    _storeName = await FirebaseService().getStoreName().first;
-    await Future.delayed(const Duration(seconds: 2));
-    final success = await billing.confirmBill();
-    if (!mounted) return;
-    setState(() => _processing = false);
-    if (!success) {
-      kSnack(context, billing.saveError ?? 'Failed to save bill. Try again.', ok: false);
-      return;
+
+    try {
+      _storeName = await FirebaseService().getStoreNameOnce();
+      debugPrint('✅ storeName: $_storeName');
+
+      final success = await billing.confirmBill();
+      debugPrint('✅ confirmBill result: $success');
+      debugPrint('✅ saveError: ${billing.saveError}');
+
+      if (!mounted) return;
+      setState(() => _processing = false);
+
+      if (!success) {
+        kSnack(context, billing.saveError ?? 'Failed to save bill. Try again.', ok: false);
+        return;
+      }
+      setState(() => _done = true);
+      _successCtrl.forward();
+    } catch (e, stack) {
+      debugPrint('❌ _pay error: $e');
+      debugPrint('❌ stack: $stack');
+      if (!mounted) return;
+      setState(() => _processing = false);
+      kSnack(context, 'Error: $e', ok: false);
     }
-    setState(() => _done = true);
-    _successCtrl.forward();
   }
 
   String get _methodLabel {

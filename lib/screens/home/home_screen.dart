@@ -276,7 +276,7 @@ class _Dashboard extends StatelessWidget {
                 ),
               );
             }
-            final bills = s.data!.reversed.take(5).toList();
+            final bills = s.data!.take(5).toList();
             const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),

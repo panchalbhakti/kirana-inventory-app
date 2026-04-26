@@ -47,21 +47,21 @@ class BillingProvider with ChangeNotifier {
     final bill = Bill(id: '', total: total, date: DateTime.now());
 
     try {
-      // Save bill to Firestore first
+      // Save bill to Firestore
       await _svc.addBill(bill);
 
-      // Update stock for each product
-      for (final e in snapshot.entries) {
-        await _svc.updateProductQuantity(e.key.id, _r(e.key.quantity - e.value));
-      }
-
-      // Only clear cart after everything succeeds
+      // Clear cart immediately after bill is saved
       cart.clear();
       _saving = false;
       notifyListeners();
+
+      // Update stock in background — don't block success screen
+      for (final e in snapshot.entries) {
+        _svc.updateProductQuantity(e.key.id, _r(e.key.quantity - e.value));
+      }
+
       return true;
     } catch (e) {
-      // Firestore failed — keep cart intact, show error
       saveError = 'Failed to save bill. Please check your connection and try again.';
       _saving = false;
       notifyListeners();

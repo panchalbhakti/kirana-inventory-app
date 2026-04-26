@@ -18,10 +18,21 @@ class FirebaseService {
     });
   }
 
+  Future<String> getStoreNameOnce() async {
+    try {
+      final doc = await _db.collection('settings').doc('store')
+          .get()
+          .timeout(const Duration(seconds: 5));
+      return doc.exists ? (doc['name'] ?? 'Kirana Store') : 'Kirana Store';
+    } catch (_) {
+      return 'Kirana Store';
+    }
+  }
+
   // ─── PRODUCTS ──────────────────────────────────────────────────
 
   Future<void> addProduct(Product product) async {
-    _db.collection('products').add(product.toMap());
+    await _db.collection('products').add(product.toMap());
   }
 
   Stream<List<Product>> getProducts() {
@@ -33,7 +44,7 @@ class FirebaseService {
   }
 
   Future<void> deleteProduct(String id) async {
-    _db.collection('products').doc(id).delete();
+    await _db.collection('products').doc(id).delete();
   }
 
   /// Quantity is now double to support kg, g, litre, ml, etc.
@@ -44,11 +55,13 @@ class FirebaseService {
   // ─── BILLS ─────────────────────────────────────────────────────
 
   Future<void> addBill(Bill bill) async {
-    _db.collection('bills').add(bill.toMap());
+    await _db.collection('bills').add(bill.toMap());
   }
 
   Stream<List<Bill>> getBills() {
-    return _db.collection('bills').snapshots().map((snapshot) {
+    return _db.collection('bills')
+        .orderBy('date', descending: true)
+        .snapshots().map((snapshot) {
       return snapshot.docs
           .map((doc) => Bill(
         id: doc.id,
